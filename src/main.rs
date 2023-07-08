@@ -7,7 +7,7 @@ use neli::{
     genl::{AttrTypeBuilder, Genlmsghdr, GenlmsghdrBuilder, NlattrBuilder},
     nl::{NlPayload, Nlmsghdr},
     router::asynchronous::NlRouter,
-    types::{Buffer, GenlBuffer},
+    types::GenlBuffer,
     utils::Groups,
 };
 
@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // construct generic netlink attributes
     let mut genl_attrs = GenlBuffer::new();
 
-    // IFINDEX is needed for the GET_STATION command - which interface are we checking?
+    // IFINDEX is needed when requesting the GET_WIPHY command - which interface are we checking?
     genl_attrs.push(
         NlattrBuilder::default()
             // NOTE: 3 is the `IFINDEX` nl80211 attribute
@@ -43,22 +43,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build()?,
     );
 
-    // MAC is needed for the GET_STATION command - which station (identified by its BSSID) are we checking?
-    genl_attrs.push(
-        NlattrBuilder::default()
-            // NOTE: 6 is the `MAC` nl80211 atttribute
-            .nla_type(AttrTypeBuilder::default().nla_type(6).build()?)
-            // this is the BSSID of the network - here we put in anything that's not a BSSID that's being used
-            // NOTE: to test the happy path, use `iw dev <interface_name> link` and add it in here
-            .nla_payload(Buffer::from(vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06]))
-            .build()?,
-    );
-
     // construct generic netlink message
     let genl_payload: Nl80211Payload = GenlmsghdrBuilder::default()
         .version(1)
-        // NOTE: 17 is the `GET_STATION` nl80211 command
-        .cmd(17)
+        // NOTE: 1 is the `GET_WIPHY` nl80211 command
+        .cmd(1)
         .attrs(genl_attrs)
         .build()?;
 
@@ -79,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // FIXME: if there was an error above, then this is never logged, because `recv.next().await` hangs forever after the error
-    eprintln!("finished iterating!");
+    eprintln!("finished iterating! if you're reading this then it worked! 🎉🎉🎉");
 
     Ok(())
 }
