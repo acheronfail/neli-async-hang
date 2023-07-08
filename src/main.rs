@@ -1,62 +1,41 @@
 use neli::{
     consts::{
-        nl::{GenlId, NlmF},
+        nl::NlmF,
+        rtnl::{Arphrd, RtAddrFamily, Rtm},
         socket::NlFamily,
     },
     err::RouterError,
-    genl::{AttrTypeBuilder, Genlmsghdr, GenlmsghdrBuilder, NlattrBuilder},
     nl::{NlPayload, Nlmsghdr},
     router::asynchronous::NlRouter,
-    types::GenlBuffer,
+    rtnl::{Ifinfomsg, IfinfomsgBuilder},
     utils::Groups,
 };
 
-type Nl80211Payload = Genlmsghdr<u8, u16>;
-type NextNl80211 =
-    Option<Result<Nlmsghdr<GenlId, Nl80211Payload>, RouterError<GenlId, Nl80211Payload>>>;
+type NextNl80211 = Option<Result<Nlmsghdr<Rtm, Ifinfomsg>, RouterError<Rtm, Ifinfomsg>>>;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // get the interface index from arguments
-    // NOTE: change this to the index of your wifi card - use `ip addr` to get it
-    let interface_idx = std::env::args()
-        .nth(1)
-        .expect("please pass wireless interface index!")
-        .parse::<i32>()
-        .expect("wireless interface index should be an integer");
+    let (socket, _) = NlRouter::connect(NlFamily::Route, None, Groups::empty()).await?;
 
-    // connect to netlink
-    let (socket, _) = NlRouter::connect(NlFamily::Generic, Some(0), Groups::empty()).await?;
+    // needed from netlink route
+    socket.enable_strict_checking(true)?;
 
-    // get nl80211 family id
-    let nl80211_family_id = socket.resolve_genl_family("nl80211").await?;
-
-    // construct generic netlink attributes
-    let mut genl_attrs = GenlBuffer::new();
-
-    // IFINDEX is needed when requesting the GET_WIPHY command - which interface are we checking?
-    genl_attrs.push(
-        NlattrBuilder::default()
-            // NOTE: 3 is the `IFINDEX` nl80211 attribute
-            .nla_type(AttrTypeBuilder::default().nla_type(3).build()?)
-            .nla_payload(interface_idx)
-            .build()?,
-    );
-
-    // construct generic netlink message
-    let genl_payload: Nl80211Payload = GenlmsghdrBuilder::default()
-        .version(1)
-        // NOTE: 1 is the `GET_WIPHY` nl80211 command
-        .cmd(1)
-        .attrs(genl_attrs)
+    // build a message to fetch all interfaces
+    let ifinfomsg = IfinfomsgBuilder::default()
+        // this is layer 2, so family is unspecified
+        .ifi_family(RtAddrFamily::Unspecified)
+        .ifi_type(Arphrd::Netrom)
+        // when index is zero, it fetches them all
+        .ifi_index(0)
         .build()?;
 
     // send it to netlink
     let mut recv = socket
-        .send::<_, _, u16, Nl80211Payload>(
-            nl80211_family_id,
-            NlmF::REQUEST,
-            NlPayload::Payload(genl_payload),
+        .send::<Rtm, Ifinfomsg, Rtm, Ifinfomsg>(
+            Rtm::Getlink,
+            // NOTE: sending the `NlmF::DUMP` flag here will make this all work, but this example is testing the error case
+            NlmF::REQUEST | NlmF::ACK,
+            NlPayload::Payload(ifinfomsg),
         )
         .await?;
 
