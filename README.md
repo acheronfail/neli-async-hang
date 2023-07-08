@@ -1,4 +1,4 @@
-# `neli-nl80211-hang`
+# `neli-async-hang`
 
 A small repository to reproduce a bug in `neli`.
 
